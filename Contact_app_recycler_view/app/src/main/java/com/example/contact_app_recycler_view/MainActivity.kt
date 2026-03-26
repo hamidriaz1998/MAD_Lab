@@ -26,9 +26,12 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
     private lateinit var btnLoadContacts: Button
     private lateinit var recyclerViewContacts: RecyclerView
     private lateinit var searchView: SearchView
-
+    private lateinit var btnSortAsc: Button
+    private lateinit var btnSortDesc: Button
     private lateinit var contactAdapter: ContactAdapter
-    private val contactList = mutableListOf<Contact>()
+    private val contactListEntries = mutableListOf<Contact>()
+    private lateinit var contactListFull: MutableList<Contact>
+
 
     // for contact loading permission request
     private val requestContactsPermission =
@@ -52,6 +55,8 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         btnLoadContacts = findViewById(R.id.btnLoadContacts)
         recyclerViewContacts = findViewById(R.id.recyclerViewContacts)
         searchView = findViewById(R.id.searchView)
+        btnSortAsc = findViewById(R.id.btnSortAsc)
+        btnSortDesc = findViewById(R.id.btnSortDesc)
 
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
@@ -61,9 +66,12 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         }
 
         // Setup RecyclerView
-        contactAdapter = ContactAdapter(contactList, this)
+        contactAdapter = ContactAdapter(contactListEntries, this)
         recyclerViewContacts.layoutManager = LinearLayoutManager(this)
         recyclerViewContacts.adapter = contactAdapter
+        
+        // initialize the master list AFTER the adapter is created
+        contactListFull = contactAdapter.contactListFull
 
         // Button Click Listeners
         btnSave.setOnClickListener {
@@ -76,7 +84,6 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
 
         // Setup search View
         searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            // Not submitting anything so ignored
             override fun onQueryTextSubmit(query: String?): Boolean {
                 return false
             }
@@ -86,7 +93,30 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
                 return true
         }
         })
+
+        // Setup Sorting buttons
+        btnSortAsc.setOnClickListener {
+            sortContactsByName(true)
+        }
+
+        btnSortDesc.setOnClickListener {
+            sortContactsByName(false)
+        }
     }
+
+    private fun refreshList() {
+        contactAdapter.filter(searchView.query.toString())
+    }
+
+    private fun sortContactsByName(ascending: Boolean) {
+        if (ascending){
+            contactListFull.sortBy { it.name.lowercase() }
+        } else {
+            contactListFull.sortByDescending { it.name.lowercase() }
+        }
+        refreshList()
+    }
+
 
     private fun saveContact() {
         val name = etName.text.toString().trim()
@@ -97,11 +127,14 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         }
 
         val newContact = Contact(name, phone)
-        contactList.add(newContact)
-        contactAdapter.contactListFull.add(newContact)
-        contactAdapter.filter(searchView.query.toString())
-        contactAdapter.notifyItemInserted(contactList.size - 1)
-        recyclerViewContacts.scrollToPosition(contactList.size - 1)
+        contactListFull.add(newContact)
+        refreshList()
+        
+        // Scroll to the new contact
+        val index = contactListEntries.indexOf(newContact)
+        if (index != -1) {
+            recyclerViewContacts.scrollToPosition(index)
+        }
 
         Toast.makeText(this, "Contact saved successfully", Toast.LENGTH_SHORT).show()
 
@@ -130,7 +163,7 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
     }
 
     override fun onItemClick(position: Int) {
-        val contact = contactList[position]
+        val contact = contactListEntries[position]
         Toast.makeText(this, "Contact: ${contact.name}\nPhone: ${contact.phone}", Toast.LENGTH_SHORT).show()
     }
 
@@ -147,11 +180,9 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
             .setTitle("Delete Contact")
             .setMessage("Are you sure you want to delete this contact?")
             .setPositiveButton("Yes") { _, _ ->
-                val contactToDelete = contactList[position]
-                contactList.removeAt(position)
-                contactAdapter.contactListFull.remove(contactToDelete)
-                contactAdapter.notifyItemRemoved(position)
-                contactAdapter.notifyItemRangeChanged(position, contactList.size)
+                val contactToDelete = contactListEntries[position]
+                contactListFull.remove(contactToDelete)
+                refreshList()
                 Toast.makeText(this, "Contact deleted", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("No", null)
@@ -217,12 +248,9 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
             return
         }
 
-        contactList.clear()
-        contactList.addAll(loadedContacts)
-        contactAdapter.contactListFull.clear()
-        contactAdapter.contactListFull.addAll(loadedContacts)
-        contactAdapter.filter(searchView.query.toString())
-        contactAdapter.notifyDataSetChanged()
+        contactListFull.clear()
+        contactListFull.addAll(loadedContacts)
+        refreshList()
 
         Toast.makeText(this, "${loadedContacts.size} contacts loaded", Toast.LENGTH_SHORT).show()
     }
@@ -232,7 +260,7 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         val etEditName = dialogView.findViewById<EditText>(R.id.etEditName)
         val etEditPhone = dialogView.findViewById<EditText>(R.id.etEditPhone)
 
-        val contact = contactList[position]
+        val contact = contactListEntries[position]
         etEditName.setText(contact.name)
         etEditPhone.setText(contact.phone)
 
@@ -252,8 +280,7 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
             if (validateInputs(updatedName, updatedPhone, etEditName, etEditPhone)) {
                 contact.name = updatedName
                 contact.phone = updatedPhone
-                contactAdapter.filter(searchView.query.toString())
-                contactAdapter.notifyItemChanged(position)
+                refreshList()
                 Toast.makeText(this, "Contact updated", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }

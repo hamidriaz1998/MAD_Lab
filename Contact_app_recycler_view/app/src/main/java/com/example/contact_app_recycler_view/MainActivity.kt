@@ -2,17 +2,20 @@ package com.example.contact_app_recycler_view
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.view.LayoutInflater
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
+import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -28,10 +31,33 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
     private lateinit var searchView: SearchView
     private lateinit var btnSortAsc: Button
     private lateinit var btnSortDesc: Button
+    private lateinit var ivAddImage: ImageView
+    private lateinit var cvAddImage: CardView
+
     private lateinit var contactAdapter: ContactAdapter
     private val contactListEntries = mutableListOf<Contact>()
     private lateinit var contactListFull: MutableList<Contact>
+    private var currentSortAsc: Boolean = true
 
+    private var selectedImageUri: String? = null
+    private var tempEditImageUri: String? = null
+    private var dialogImageView: ImageView? = null
+
+    // for image picking when adding
+    private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            selectedImageUri = it.toString()
+            ivAddImage.setImageURI(it)
+        }
+    }
+
+    // for image picking when editing
+    private val editImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            tempEditImageUri = it.toString()
+            dialogImageView?.setImageURI(it)
+        }
+    }
 
     // for contact loading permission request
     private val requestContactsPermission =
@@ -57,7 +83,8 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         searchView = findViewById(R.id.searchView)
         btnSortAsc = findViewById(R.id.btnSortAsc)
         btnSortDesc = findViewById(R.id.btnSortDesc)
-
+        ivAddImage = findViewById(R.id.ivAddImage)
+        cvAddImage = findViewById(R.id.cvAddImage)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -80,6 +107,10 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
 
         btnLoadContacts.setOnClickListener {
             checkPermissionAndLoadContacts()
+        }
+
+        cvAddImage.setOnClickListener {
+            pickImageLauncher.launch("image/*")
         }
 
         // Setup search View
@@ -110,8 +141,10 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
 
     private fun sortContactsByName(ascending: Boolean) {
         if (ascending){
+            currentSortAsc = true
             contactListFull.sortBy { it.name.lowercase() }
         } else {
+            currentSortAsc = false
             contactListFull.sortByDescending { it.name.lowercase() }
         }
         refreshList()
@@ -126,9 +159,10 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
             return
         }
 
-        val newContact = Contact(name, phone)
+        val newContact = Contact(name, phone, selectedImageUri)
         contactListFull.add(newContact)
         refreshList()
+        sortContactsByName(currentSortAsc)
         
         // Scroll to the new contact
         val index = contactListEntries.indexOf(newContact)
@@ -138,8 +172,11 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
 
         Toast.makeText(this, "Contact saved successfully", Toast.LENGTH_SHORT).show()
 
+        // Reset inputs
         etName.text.clear()
         etPhone.text.clear()
+        selectedImageUri = null
+        ivAddImage.setImageResource(android.R.drawable.ic_menu_camera)
         etName.requestFocus()
     }
 
@@ -218,7 +255,8 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
 
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
+            ContactsContract.CommonDataKinds.Phone.NUMBER,
+            ContactsContract.CommonDataKinds.Phone.PHOTO_URI
         )
 
         val cursor = contentResolver.query(
@@ -232,13 +270,15 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         cursor?.use {
             val nameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
             val phoneIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+            val photoIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.PHOTO_URI)
 
             while (it.moveToNext()) {
                 val name = it.getString(nameIndex) ?: ""
                 val phone = it.getString(phoneIndex) ?: ""
+                val photoUri = it.getString(photoIndex)
 
                 if (name.isNotBlank() && phone.isNotBlank()) {
-                    loadedContacts.add(Contact(name, phone))
+                    loadedContacts.add(Contact(name, phone, photoUri))
                 }
             }
         }
@@ -259,10 +299,25 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
         val dialogView = LayoutInflater.from(this).inflate(R.layout.activity_dialog_edit_item, null)
         val etEditName = dialogView.findViewById<EditText>(R.id.etEditName)
         val etEditPhone = dialogView.findViewById<EditText>(R.id.etEditPhone)
+        val ivEditImage = dialogView.findViewById<ImageView>(R.id.ivEditImage)
+        val cvEditImage = dialogView.findViewById<CardView>(R.id.cvEditImage)
 
         val contact = contactListEntries[position]
         etEditName.setText(contact.name)
         etEditPhone.setText(contact.phone)
+        
+        tempEditImageUri = contact.imageUri
+        dialogImageView = ivEditImage
+
+        if (tempEditImageUri != null) {
+            ivEditImage.setImageURI(Uri.parse(tempEditImageUri))
+        } else {
+            ivEditImage.setImageResource(android.R.drawable.ic_menu_camera)
+        }
+
+        cvEditImage.setOnClickListener {
+            editImageLauncher.launch("image/*")
+        }
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Edit Contact")
@@ -280,6 +335,7 @@ class MainActivity : AppCompatActivity(), ContactAdapter.OnContactActionListener
             if (validateInputs(updatedName, updatedPhone, etEditName, etEditPhone)) {
                 contact.name = updatedName
                 contact.phone = updatedPhone
+                contact.imageUri = tempEditImageUri
                 refreshList()
                 Toast.makeText(this, "Contact updated", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()

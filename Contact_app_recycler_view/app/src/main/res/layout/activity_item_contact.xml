@@ -14,6 +14,24 @@
         android:padding="12dp"
         android:gravity="center_vertical">
 
+        <!-- Profile Image Container -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:layout_marginEnd="12dp"
+            app:cardCornerRadius="25dp"
+            app:cardElevation="0dp"
+            android:backgroundTint="#EEEEEE">
+
+            <ImageView
+                android:id="@+id/tvContactImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@android:drawable/ic_menu_gallery"
+                android:contentDescription="Contact Profile Image" />
+        </androidx.cardview.widget.CardView>
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
